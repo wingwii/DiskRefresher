@@ -14,15 +14,24 @@ namespace DiskRefresher
 {
     public partial class UcDriveRefresh : UserControl
     {
-        private long mMinHashFileSize = 0x500000;
+        private long mMinHashFileSize = 5 * 0x100000;
         private string mHashFile = string.Empty;
         private string mRootPath = string.Empty;
         private string mTmpFile = string.Empty;
         private bool mRunning = false;
         private bool mIsFinished = false;
         private bool mIsPaused = false;
-        private byte[] mBuffer = new byte[0x100000];
+        private byte[] mBuffer = new byte[16 * 0x100000];
+        private long mTotalBytes = 0;
+        private long mBytesTransfered = 0;
 
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint dwLowDateTime;
+            public uint dwHighDateTime;
+        }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool MoveFileEx(
@@ -65,6 +74,23 @@ namespace DiskRefresher
             out uint lpNumberOfBytesWritten,
             IntPtr lpOverlapped
         );
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileTime(
+            IntPtr hFile,
+            ref FILETIME lpCreationTime,
+            ref FILETIME lpLastAccessTime,
+            ref FILETIME lpLastWriteTime
+        );
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetFileTime(
+            IntPtr hFile,
+            ref FILETIME lpCreationTime,
+            IntPtr lpLastAccessTime,
+            IntPtr lpLastWriteTime
+        );
+
 
         public delegate void StopEvtCallback(UcDriveRefresh sender);
         public event StopEvtCallback OnStop = null;
@@ -155,6 +181,7 @@ namespace DiskRefresher
             var di = new DriveInfo(this.mRootPath);
             var usedSpace = di.TotalSize - di.TotalFreeSpace;
             pv.max = usedSpace;
+            this.mTotalBytes = usedSpace;
 
             this.mRunning = true;
             var thread = new Thread(this.ThreadRefreshDrive);
@@ -166,7 +193,7 @@ namespace DiskRefresher
         {
             if (this.InvokeRequired)
             {
-                this.Invoke(new MethodInvoker(delegate()
+                this.Invoke(new MethodInvoker(delegate ()
                 {
                     this.Stop();
                 }));
@@ -189,6 +216,47 @@ namespace DiskRefresher
                 }
             }
             //
+        }
+
+        public void TimerTick()
+        {
+            var nBytes = (long)Interlocked.Exchange(ref this.mBytesTransfered, 0);
+            //nBytes *= 1;
+
+            var nKBytes = nBytes / 1024;
+            if (nBytes > 0 && 0 == nKBytes)
+            {
+                nKBytes = 1;
+            }
+
+            var nSec = (long)-1;
+            if (nBytes > 0)
+            {
+                nSec = this.mTotalBytes / nBytes;
+                ++nSec;
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("Speed: ");
+            sb.Append(nKBytes.ToString());
+            sb.Append(" KBs/s");
+            if (nSec >= 0)
+            {
+                var seconds = nSec;
+                var hours = seconds / 3600;
+                seconds = seconds % 3600;
+                var minutes = seconds / 60;
+                seconds = seconds % 60;
+
+                sb.Append(", ETA: ");
+                sb.Append(hours.ToString());
+                sb.Append("h ");
+                sb.Append(minutes.ToString());
+                sb.Append("m ");
+                sb.Append(seconds.ToString());
+                sb.Append("s");
+            }
+            this.LblSpeed.Text = sb.ToString();
         }
 
         private void ThreadRefreshDrive()
@@ -332,10 +400,24 @@ namespace DiskRefresher
             public byte[] sha256 = null;
         }
 
-        private bool CopyFile(IntPtr srcFileHandle, long size, string dstPath, HashResults hr)
+        private bool CopyFile(
+            IntPtr srcFileHandle, 
+            long size, 
+            string dstPath, 
+            ref FILETIME creationTime, 
+            HashResults hr
+        )
         {
             var lDstPath = dstPath; // PrepareLongPath(dstPath);
-            var dstFileHandle = CreateFile(lDstPath, FileAccess.Write, FileShare.Read, IntPtr.Zero, FileMode.Create, FileAttributes.Normal, IntPtr.Zero);
+            var dstFileHandle = CreateFile(
+                lDstPath, 
+                (FileAccess)0x40000000,
+                FileShare.Read, 
+                IntPtr.Zero, 
+                FileMode.Create, 
+                FileAttributes.Normal, 
+                IntPtr.Zero
+            );
             if (!IsValidFileHandle(dstFileHandle))
             {
                 return false;
@@ -394,10 +476,12 @@ namespace DiskRefresher
                     sha256.Write(buf, 0, nRead);
                 }
 
-                this.IncreaseProgressBarValue(this.PrgbCurrentFile, nRead);
                 offset += (long)nRead;
+                this.mBytesTransfered += (long)nRead;
+                this.IncreaseProgressBarValue(this.PrgbCurrentFile, nRead);
             }
 
+            var fileTimeOK = SetFileTime(dstFileHandle, ref creationTime, IntPtr.Zero, IntPtr.Zero);
             CloseHandle(dstFileHandle);
 
             if (enableHash)
@@ -501,9 +585,18 @@ namespace DiskRefresher
                 hr.size = size;
             }
 
+            var fileTimeOK = false;
+            var creationTime = new FILETIME();
+            var lastAccessTime = new FILETIME();
+            var lastWriteTime = new FILETIME();
             if (ok)
             {
-                ok = this.CopyFile(handle, size, this.mTmpFile, hr);
+                fileTimeOK = GetFileTime(handle, ref creationTime, ref lastAccessTime, ref lastWriteTime);
+            }
+
+            if (ok)
+            {
+                ok = this.CopyFile(handle, size, this.mTmpFile, ref creationTime, hr);
             }
             CloseHandle(handle);
 

@@ -35,6 +35,7 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.BtnPause = new System.Windows.Forms.Button();
             this.BtnStop = new System.Windows.Forms.Button();
+            this.LblSpeed = new System.Windows.Forms.Label();
             this.panel1.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -67,7 +68,7 @@
             this.PrgbCurrentFile.BackColor = System.Drawing.Color.Gray;
             this.PrgbCurrentFile.Dock = System.Windows.Forms.DockStyle.Top;
             this.PrgbCurrentFile.ForeColor = System.Drawing.Color.LimeGreen;
-            this.PrgbCurrentFile.Location = new System.Drawing.Point(0, 43);
+            this.PrgbCurrentFile.Location = new System.Drawing.Point(0, 63);
             this.PrgbCurrentFile.Name = "PrgbCurrentFile";
             this.PrgbCurrentFile.Size = new System.Drawing.Size(500, 18);
             this.PrgbCurrentFile.TabIndex = 3;
@@ -77,7 +78,7 @@
             this.PrgbTotal.BackColor = System.Drawing.Color.Silver;
             this.PrgbTotal.Dock = System.Windows.Forms.DockStyle.Top;
             this.PrgbTotal.ForeColor = System.Drawing.Color.DeepSkyBlue;
-            this.PrgbTotal.Location = new System.Drawing.Point(0, 61);
+            this.PrgbTotal.Location = new System.Drawing.Point(0, 81);
             this.PrgbTotal.Name = "PrgbTotal";
             this.PrgbTotal.Size = new System.Drawing.Size(500, 18);
             this.PrgbTotal.TabIndex = 4;
@@ -87,7 +88,7 @@
             this.panel1.Controls.Add(this.BtnPause);
             this.panel1.Controls.Add(this.BtnStop);
             this.panel1.Dock = System.Windows.Forms.DockStyle.Top;
-            this.panel1.Location = new System.Drawing.Point(0, 79);
+            this.panel1.Location = new System.Drawing.Point(0, 99);
             this.panel1.Name = "panel1";
             this.panel1.Size = new System.Drawing.Size(500, 30);
             this.panel1.TabIndex = 6;
@@ -119,6 +120,16 @@
             this.BtnStop.UseVisualStyleBackColor = false;
             this.BtnStop.Click += new System.EventHandler(this.BtnStop_Click);
             // 
+            // LblSpeed
+            // 
+            this.LblSpeed.BackColor = System.Drawing.Color.Silver;
+            this.LblSpeed.Dock = System.Windows.Forms.DockStyle.Top;
+            this.LblSpeed.Location = new System.Drawing.Point(0, 43);
+            this.LblSpeed.Name = "LblSpeed";
+            this.LblSpeed.Size = new System.Drawing.Size(500, 20);
+            this.LblSpeed.TabIndex = 7;
+            this.LblSpeed.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
             // UcDriveRefresh
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 14F);
@@ -126,11 +137,12 @@
             this.Controls.Add(this.panel1);
             this.Controls.Add(this.PrgbTotal);
             this.Controls.Add(this.PrgbCurrentFile);
+            this.Controls.Add(this.LblSpeed);
             this.Controls.Add(this.TxtCurrentFile);
             this.Controls.Add(this.LblTitle);
             this.Font = new System.Drawing.Font("Tahoma", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.Name = "UcDriveRefresh";
-            this.Size = new System.Drawing.Size(500, 120);
+            this.Size = new System.Drawing.Size(500, 140);
             this.Load += new System.EventHandler(this.UcDriveRefresh_Load);
             this.panel1.ResumeLayout(false);
             this.ResumeLayout(false);
@@ -147,5 +159,6 @@
         private System.Windows.Forms.Panel panel1;
         private System.Windows.Forms.Button BtnStop;
         private System.Windows.Forms.Button BtnPause;
+        private System.Windows.Forms.Label LblSpeed;
     }
 }

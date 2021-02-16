@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.PnlDriveList = new System.Windows.Forms.Panel();
             this.DriveList = new System.Windows.Forms.ListView();
             this.ColDriveLetter = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
@@ -38,6 +39,7 @@
             this.BtnStart = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.PnlWorkProgress = new System.Windows.Forms.Panel();
+            this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.PnlDriveList.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -140,6 +142,11 @@
             this.PnlWorkProgress.Size = new System.Drawing.Size(500, 500);
             this.PnlWorkProgress.TabIndex = 1;
             // 
+            // timer1
+            // 
+            this.timer1.Interval = 1000;
+            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 14F);
@@ -150,7 +157,7 @@
             this.Font = new System.Drawing.Font("Tahoma", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.Name = "Form1";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "Disk Refresh";
+            this.Text = "Disk Refresher";
             this.Load += new System.EventHandler(this.Form1_Load);
             this.PnlDriveList.ResumeLayout(false);
             this.ResumeLayout(false);
@@ -169,6 +176,7 @@
         private System.Windows.Forms.ColumnHeader ColDriveTotal;
         private System.Windows.Forms.Button BtnStart;
         private System.Windows.Forms.Panel PnlWorkProgress;
+        private System.Windows.Forms.Timer timer1;
     }
 }
 

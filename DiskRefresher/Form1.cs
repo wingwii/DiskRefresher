@@ -83,6 +83,7 @@ namespace DiskRefresher
                 return;
             }
 
+            this.timer1.Enabled = false;
             this.BtnStart.Text = "Start";
             this.DriveList.Enabled = true;
             this.BtnRefreshDriveList.Enabled = true;
@@ -109,6 +110,7 @@ namespace DiskRefresher
 
             this.DriveList.Enabled = false;
             this.BtnRefreshDriveList.Enabled = false;
+            this.timer1.Enabled = true;
 
             this.mWorkerCount = workerCount;
             this.PnlWorkProgress.SuspendLayout();
@@ -151,6 +153,17 @@ namespace DiskRefresher
             else
             {
                 //this.StopDriveRefreshing();
+            }
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            foreach (UcDriveRefresh uc in this.PnlWorkProgress.Controls)
+            {
+                if (uc != null)
+                {
+                    uc.TimerTick();
+                }
             }
         }
 
