@@ -21,9 +21,11 @@ namespace DiskRefresher
         private bool mRunning = false;
         private bool mIsFinished = false;
         private bool mIsPaused = false;
-        private byte[] mBuffer = new byte[16 * 0x100000];
         private long mTotalBytes = 0;
         private long mBytesTransfered = 0;
+        private int mMaxFileYearsOld = -1;
+        private int mCurrentYear = 0;
+        private byte[] mBuffer = new byte[16 * 0x100000];
 
 
         [StructLayout(LayoutKind.Sequential)]
@@ -32,6 +34,20 @@ namespace DiskRefresher
             public uint dwLowDateTime;
             public uint dwHighDateTime;
         }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SYSTEMTIME
+        {
+            [MarshalAs(UnmanagedType.U2)] public short Year;
+            [MarshalAs(UnmanagedType.U2)] public short Month;
+            [MarshalAs(UnmanagedType.U2)] public short DayOfWeek;
+            [MarshalAs(UnmanagedType.U2)] public short Day;
+            [MarshalAs(UnmanagedType.U2)] public short Hour;
+            [MarshalAs(UnmanagedType.U2)] public short Minute;
+            [MarshalAs(UnmanagedType.U2)] public short Second;
+            [MarshalAs(UnmanagedType.U2)] public short Milliseconds;
+        }
+
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool MoveFileEx(
@@ -43,7 +59,7 @@ namespace DiskRefresher
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr CreateFile(
              [MarshalAs(UnmanagedType.LPTStr)] string filename,
-             [MarshalAs(UnmanagedType.U4)] FileAccess access,
+             [MarshalAs(UnmanagedType.U4)] uint access,
              [MarshalAs(UnmanagedType.U4)] FileShare share,
              IntPtr securityAttributes,
              [MarshalAs(UnmanagedType.U4)] FileMode creationDisposition,
@@ -91,6 +107,12 @@ namespace DiskRefresher
             IntPtr lpLastWriteTime
         );
 
+        [DllImport("kernel32.dll", CallingConvention = CallingConvention.Winapi, SetLastError = true)]
+        private static extern bool FileTimeToSystemTime(
+           [In] ref FILETIME lpFileTime,
+           out SYSTEMTIME lpSystemTime
+        );
+
 
         public delegate void StopEvtCallback(UcDriveRefresh sender);
         public event StopEvtCallback OnStop = null;
@@ -124,6 +146,12 @@ namespace DiskRefresher
         {
             get { return this.mMinHashFileSize; }
             set { this.mMinHashFileSize = value; }
+        }
+
+        public int FileYearsOld
+        {
+            get { return this.mMaxFileYearsOld; }
+            set { this.mMaxFileYearsOld = value; }
         }
 
         private void UcDriveRefresh_Load(object sender, EventArgs e)
@@ -167,6 +195,9 @@ namespace DiskRefresher
 
         public void Start()
         {
+            var now = DateTime.Now;
+            this.mCurrentYear = now.Year;
+
             this.mHashFile = Path.Combine(this.mRootPath, "FileDataHashes.txt");
             //this.mTmpFile = Path.Combine(this.mRootPath, "0390c03e-8178-4fb8-907c-33ebe259a384.tmp");
             this.mTmpFile = Path.Combine(this.mRootPath, Guid.NewGuid().ToString() + ".tmp");
@@ -389,7 +420,15 @@ namespace DiskRefresher
         private static IntPtr OpenFileForReading(string path)
         {
             var lPath = PrepareLongPath(path);
-            var handle = CreateFile(lPath, FileAccess.Read, FileShare.Read, IntPtr.Zero, FileMode.Open, FileAttributes.Normal, IntPtr.Zero);
+            var handle = CreateFile(
+                lPath,
+                0x80000000,
+                FileShare.Read,
+                IntPtr.Zero,
+                FileMode.Open,
+                FileAttributes.Normal,
+                IntPtr.Zero
+            );
             return handle;
         }
 
@@ -401,21 +440,21 @@ namespace DiskRefresher
         }
 
         private bool CopyFile(
-            IntPtr srcFileHandle, 
-            long size, 
-            string dstPath, 
-            ref FILETIME creationTime, 
+            IntPtr srcFileHandle,
+            long size,
+            string dstPath,
+            ref FILETIME creationTime,
             HashResults hr
         )
         {
             var lDstPath = dstPath; // PrepareLongPath(dstPath);
             var dstFileHandle = CreateFile(
-                lDstPath, 
-                (FileAccess)0x40000000,
-                FileShare.Read, 
-                IntPtr.Zero, 
-                FileMode.Create, 
-                FileAttributes.Normal, 
+                lDstPath,
+                0x40000000,
+                FileShare.Read,
+                IntPtr.Zero,
+                FileMode.Create,
+                FileAttributes.Normal,
                 IntPtr.Zero
             );
             if (!IsValidFileHandle(dstFileHandle))
@@ -585,13 +624,44 @@ namespace DiskRefresher
                 hr.size = size;
             }
 
+            var fileYearsOld = this.mMaxFileYearsOld;
+            if (fileYearsOld >= 0)
+            {
+                fileYearsOld = this.mCurrentYear - fileYearsOld;
+            }
+
             var fileTimeOK = false;
             var creationTime = new FILETIME();
             var lastAccessTime = new FILETIME();
             var lastWriteTime = new FILETIME();
+            var lastWriteSystemTime = new SYSTEMTIME();
             if (ok)
             {
-                fileTimeOK = GetFileTime(handle, ref creationTime, ref lastAccessTime, ref lastWriteTime);
+                while (true)
+                {
+                    fileTimeOK = GetFileTime(handle, ref creationTime, ref lastAccessTime, ref lastWriteTime);
+                    if (!fileTimeOK)
+                    {
+                        break;
+                    }
+                    if (fileYearsOld < 0)
+                    {
+                        break;
+                    }
+
+                    fileTimeOK = FileTimeToSystemTime(ref lastWriteTime, out lastWriteSystemTime);
+                    if (!fileTimeOK)
+                    {
+                        break;
+                    }
+                    if (lastWriteSystemTime.Year >= fileYearsOld)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    break;
+                }
+                //
             }
 
             if (ok)
@@ -606,7 +676,7 @@ namespace DiskRefresher
                 ok = MoveFileEx(this.mTmpFile, lPath, 1 | 8);
             }
 
-            if (enableHash)
+            if (ok && enableHash)
             {
                 this.WriteFileHash(path, hr);
             }

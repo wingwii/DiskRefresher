@@ -112,6 +112,9 @@ namespace DiskRefresher
             this.BtnRefreshDriveList.Enabled = false;
             this.timer1.Enabled = true;
 
+            var checkFileTime = this.ChkCheckFileTime.Checked;
+            var fileYearsOld = (int)this.NmudFileYear.Value;
+
             this.mWorkerCount = workerCount;
             this.PnlWorkProgress.SuspendLayout();
             this.PnlWorkProgress.Controls.Clear();
@@ -127,6 +130,10 @@ namespace DiskRefresher
                 uc.Dock = DockStyle.Top;
                 uc.Title = title;
                 uc.RootPath = rootPath;
+                if (checkFileTime)
+                {
+                    uc.FileYearsOld = fileYearsOld;
+                }
                 uc.OnStop += this.DriveRefreshing_OnStop;
                 uc.Start();
 
