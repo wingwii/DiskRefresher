@@ -9,22 +9,31 @@ using System.IO;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Management;
 
 namespace DiskRefresher
 {
     public partial class UcDriveRefresh : UserControl
     {
+        private const byte TEMPERATURE_ATTRIBUTE = 194;
+
+
         private long mMinHashFileSize = 5 * 0x100000;
+        private int mMaxFileYearsOld = -1;
+        private int mMaxHddTemperature = 45;
+
         private string mHashFile = string.Empty;
         private string mRootPath = string.Empty;
         private string mTmpFile = string.Empty;
+        private int mCurrentYear = 0;
+        private string mPnpDevID = string.Empty;
+
         private bool mRunning = false;
         private bool mIsFinished = false;
         private bool mIsPaused = false;
+        private bool mIsCoolDown = false;
         private long mTotalBytes = 0;
         private long mBytesTransfered = 0;
-        private int mMaxFileYearsOld = -1;
-        private int mCurrentYear = 0;
         private byte[] mBuffer = new byte[16 * 0x100000];
 
 
@@ -202,6 +211,8 @@ namespace DiskRefresher
             //this.mTmpFile = Path.Combine(this.mRootPath, "0390c03e-8178-4fb8-907c-33ebe259a384.tmp");
             this.mTmpFile = Path.Combine(this.mRootPath, Guid.NewGuid().ToString() + ".tmp");
 
+            this.PreparePnpDevID();
+
             this.PrgbTotal.Maximum = 100;
             this.PrgbCurrentFile.Maximum = 100;
 
@@ -254,6 +265,11 @@ namespace DiskRefresher
             var nBytes = (long)Interlocked.Exchange(ref this.mBytesTransfered, 0);
             //nBytes *= 1;
 
+            if (this.mIsCoolDown)
+            {
+                this.CheckHddTemperature();
+            }
+
             var nKBytes = nBytes / 1024;
             if (nBytes > 0 && 0 == nKBytes)
             {
@@ -263,7 +279,8 @@ namespace DiskRefresher
             var nSec = (long)-1;
             if (nBytes > 0)
             {
-                nSec = this.mTotalBytes / nBytes;
+                var pv = this.PrgbTotal.Tag as ProgressBarValues;
+                nSec = (pv.max - pv.value) / nBytes;
                 ++nSec;
             }
 
@@ -288,6 +305,117 @@ namespace DiskRefresher
                 sb.Append("s");
             }
             this.LblSpeed.Text = sb.ToString();
+        }
+
+        private static ManagementObjectCollection ExecuteWmiQuery(string scope, string query)
+        {
+            var result = (ManagementObjectCollection)null;
+            var searcher = (ManagementObjectSearcher)null;
+            try
+            {
+                if (null == scope)
+                {
+                    searcher = new ManagementObjectSearcher(query);
+                }
+                else
+                {
+                    searcher = new ManagementObjectSearcher(scope, query);
+                }
+                result = searcher.Get();
+            }
+            catch (Exception) { }
+            if (searcher != null)
+            {
+                searcher.Dispose();
+            }
+            return result;
+        }
+
+        private void PreparePnpDevID()
+        {
+            var query = string.Empty;
+            var dicDev2PnpDevID = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            query = "SELECT DeviceID, PNPDeviceID FROM Win32_DiskDrive";
+            var queryObjects = ExecuteWmiQuery(null, query);
+            if (null != queryObjects)
+            {
+                foreach (ManagementObject queryObj in queryObjects)
+                {
+                    try
+                    {
+                        var devID = queryObj.GetPropertyValue("DeviceID").ToString();
+                        var pnpDevID = queryObj.GetPropertyValue("PNPDeviceID").ToString();
+                        dicDev2PnpDevID[devID] = pnpDevID;
+                    }
+                    catch (Exception) { }
+                }
+                queryObjects.Dispose();
+            }
+
+            var dicPartitionID2PnpDevID = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in dicDev2PnpDevID)
+            {
+                var pnpDevID = kv.Value;
+                query = "ASSOCIATORS OF {Win32_DiskDrive.DeviceID=\'";
+                query += kv.Key;
+                query += "\'} WHERE AssocClass = Win32_DiskDriveToDiskPartition";
+                queryObjects = ExecuteWmiQuery(null, query);
+                if (null != queryObjects)
+                {
+                    foreach (ManagementObject queryObj in queryObjects)
+                    {
+                        try
+                        {
+                            var devID = queryObj.GetPropertyValue("DeviceID").ToString();
+                            dicPartitionID2PnpDevID[devID] = pnpDevID;
+                        }
+                        catch (Exception) { }
+                    }
+                    queryObjects.Dispose();
+                }
+                //
+            }
+
+            var dicLogicalDisk2PnpDevID = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in dicPartitionID2PnpDevID)
+            {
+                var pnpDevID = kv.Value;
+                query = "ASSOCIATORS OF {Win32_DiskPartition.DeviceID=\'";
+                query += kv.Key;
+                query += "\'} WHERE AssocClass = Win32_LogicalDiskToPartition";
+                queryObjects = ExecuteWmiQuery(null, query);
+                if (null != queryObjects)
+                {
+                    foreach (ManagementObject queryObj in queryObjects)
+                    {
+                        try
+                        {
+                            var devID = queryObj.GetPropertyValue("DeviceID").ToString();
+                            dicLogicalDisk2PnpDevID[devID] = pnpDevID;
+                        }
+                        catch (Exception) { }
+                    }
+                    queryObjects.Dispose();
+                }
+                //
+            }
+
+            var logicalDiskID = this.mRootPath;
+            if (logicalDiskID.Length > 2)
+            {
+                logicalDiskID = logicalDiskID.Substring(0, 2);
+            }
+
+            var assocPnpDevID = string.Empty;
+            if (!dicLogicalDisk2PnpDevID.TryGetValue(logicalDiskID, out assocPnpDevID))
+            {
+                assocPnpDevID = null;
+            }
+            if (null == assocPnpDevID)
+            {
+                assocPnpDevID = string.Empty;
+            }
+            this.mPnpDevID = assocPnpDevID;
         }
 
         private void ThreadRefreshDrive()
@@ -573,9 +701,37 @@ namespace DiskRefresher
             File.AppendAllText(this.mHashFile, s);
         }
 
+        private void CheckHddTemperature()
+        {
+            var wmiQuery = "SELECT * FROM MSStorageDriver_ATAPISmartData";
+            var queryObjects = ExecuteWmiQuery("root\\WMI", wmiQuery);
+            if (null != queryObjects)
+            {
+                try
+                {
+                    foreach (ManagementObject queryObj in queryObjects)
+                    {
+                        try
+                        {
+                            var instanceName = (string)queryObj.GetPropertyValue("InstanceName");
+                            var arrVendorSpecific = (byte[])queryObj.GetPropertyValue("VendorSpecific");
+                            var temperatureIndex = (int)Array.IndexOf(arrVendorSpecific, TEMPERATURE_ATTRIBUTE);
+                            var temperature = (int)arrVendorSpecific[temperatureIndex + 5];
+                        }
+                        catch (Exception) { }
+                    }
+                    //
+                }
+                catch (Exception) { }
+                queryObjects.Dispose();
+            }
+            //
+        }
+
         private void RefreshFile(string path)
         {
-            while (this.mIsPaused && this.mRunning)
+            this.CheckHddTemperature();
+            while ((this.mIsPaused || this.mIsCoolDown) && this.mRunning)
             {
                 Thread.Sleep(250);
             }
